@@ -2,6 +2,7 @@
 
 namespace App\Core\Excel;
 
+use App\Console\Commands\Statement\StatementInDatabase;
 use App\Models\Fund\Sheet;
 use Illuminate\Support\Str;
 
@@ -10,11 +11,12 @@ trait SmartSheetParserTrait {
         'company_column' => [
             'شرکت',
             'نام شرکت',
-            'نام اوراق',
+            'اوراق',
+            'صندوق',
             'ناشر',
         ],
-        // کلمات کلیدی دقیق برای ستون‌های مورد نظر طبق درخواست شما
-        'asset'          => [
+
+        'asset' => [
             'fields' => [
                 'count'        => [ 'تعداد' ],
                 'market_price' => [ 'قیمت بازار', 'قیمت بازار هر سهم', 'قیمت ابطال', 'قیمت بازار هر ورقه' ],
@@ -40,15 +42,19 @@ trait SmartSheetParserTrait {
             return [];
         }
 
-        // یافتن دقیق ستون‌ها بر اساس نام
         $columnMap = $this->mapColumns($grid, $config);
 
         if ( !isset($columnMap['company']) ) {
             return [];
         }
 
-        $companyCol = $columnMap['company'];
-        $startRow   = $this->findStartRow($grid, $companyCol, $config);
+        $headerCompanyCol = $columnMap['company'];
+        $startRow         = $this->findStartRow($grid, $headerCompanyCol, $config);
+
+        $actualCompanyCol = $this->findActualCompanyDataColumn($grid, $headerCompanyCol, $startRow);
+        if ( $actualCompanyCol !== null ) {
+            $columnMap['company'] = $actualCompanyCol;
+        }
 
         $result = [];
 
@@ -57,13 +63,16 @@ trait SmartSheetParserTrait {
             if ( $rowIndex < $startRow ) continue;
 
             // اگر ستون شرکت وجود ندارد
+            $companyCol = $columnMap['company'];
             if ( !isset($row[$companyCol]) ) continue;
 
             $company = $this->normalize($this->cellValue($row[$companyCol]));
 
             // فیلتر کردن ردیف‌های نامعتبر، خالی یا جمع کل
-            if ( $company === '' || is_numeric($company)
-                 || Str::contains($company, [ 'جمع', 'مجموع', 'جمع کل', 'جمع‌کل' ]) ) {
+            if ( blank($company)
+                 || is_numeric($company)
+                 || Str::is([ '*نقل*صفحه*' ], $company)
+                 || Str::contains($company, [ 'جمع', 'مجموع' ]) ) {
                 continue;
             }
 
@@ -71,6 +80,54 @@ trait SmartSheetParserTrait {
         }
 
         return $result;
+    }
+
+    /**
+     * پیدا کردن ستون واقعی نام شرکت در ردیف‌های داده
+     * (چون ممکن است ستون هدر با ستون داده‌ها متفاوت باشد، مثلاً به دلیل ادغام سلول‌ها)
+     *
+     * @param array $grid           کل گرید
+     * @param int $headerCompanyCol ستونی که هدر "شرکت" در آن قرار دارد
+     * @param int $startRow         ردیف شروع داده‌ها (اولین ردیف بعد از هدر)
+     * @return int|null ستون واقعی داده‌های شرکت یا null در صورت عدم شناسایی
+     */
+    protected function findActualCompanyDataColumn( array $grid, int $headerCompanyCol, int $startRow ): ?int {
+        // بررسی حداقل ۲۰ ردیف اول داده یا تا انتهای گرید
+        $maxRowsToCheck = min($startRow + 20, count($grid));
+        $candidates     = [];
+
+        for ( $row = $startRow; $row < $maxRowsToCheck; $row ++ ) {
+            if ( !isset($grid[$row]) ) continue;
+
+            foreach ( $grid[$row] as $col => $cell ) {
+                $value = $this->normalize($this->cellValue($cell));
+                if ( $value === '' ) continue;
+
+                // معیارهای یک نام شرکت معتبر:
+                // - خالی نباشد
+                // - عدد نباشد (یا حداقل شامل حرف باشد)
+                // - کلمات کلیدی "جمع" و امثال آن نباشد
+                if ( !is_numeric($value) && !Str::contains($value, [ 'جمع', 'مجموع', 'کل' ]) ) {
+                    // امتیاز دهی ساده: ستونی که بیشترین مقدار غیرعددی را دارد
+                    if ( !isset($candidates[$col]) ) {
+                        $candidates[$col] = 0;
+                    }
+                    $candidates[$col] ++;
+                }
+            }
+        }
+
+        if ( empty($candidates) ) {
+            return null;
+        }
+
+        // ستونی که بیشترین تعداد مقدار غیرعددی (و معتبر) را دارد
+        arsort($candidates);
+        $bestCol = key($candidates);
+
+        // اگر ستون پیدا شده با ستون هدر یکی است، مشکلی نیست
+        // در غیر این صورت، ستون جدید را برمی‌گردانیم
+        return $bestCol;
     }
 
     protected function mapColumns( array $grid, array $config ): array {
@@ -174,8 +231,8 @@ trait SmartSheetParserTrait {
             foreach ( $row as $col => $cell ) {
                 $value = $this->normalize($this->cellValue($cell));
                 if ( $value === '' ) continue;
-                foreach ( $terms as $term ) {
-                    if ( Str::contains($value, $this->normalize($term)) ) return $col;
+                if ( array_any($terms, fn( $term ) => Str::contains($value, $this->normalize($term))) ) {
+                    return $col;
                 }
             }
         }
@@ -196,12 +253,7 @@ trait SmartSheetParserTrait {
     }
 
     protected function normalize( string $value ): string {
-        $value = trim(str_replace([ "\u{202A}", "\u{202B}", "\u{202C}", "\u{200E}", "\u{200F}" ], '', $value));
-        $value = str_replace([ "\u{2215}", "\u{FF0F}" ], '/', $value);
-        $value = $this->persianToEnglishDigits($value);
-        $value = preg_replace('/\x{00A0}/u', ' ', $value);
-        $value = preg_replace('/\s+/u', ' ', $value);
-        return trim($value);
+        return app(StatementInDatabase::class)->normalizeTitle($value);
     }
 
     protected function persianToEnglishDigits( string $str ): string {

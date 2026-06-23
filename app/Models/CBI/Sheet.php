@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Models\Fund;
+namespace App\Models\CBI;
 
 use App\Models\Stock;
 use Illuminate\Database\Eloquent\Model;
@@ -10,10 +10,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Sheet extends Model {
     public $timestamps = false;
 
-    protected $table = 'fund_sheets';
+    protected $table = 'cbi_sheets';
 
     protected $fillable = [
-        'fund_id',
+        'report_id',
         'hash',
         'index',
         'total_rows',
@@ -22,8 +22,8 @@ class Sheet extends Model {
 
     /* ================= Relations ================= */
 
-    public function fund(): BelongsTo {
-        return $this->belongsTo(Fund::class);
+    public function report(): BelongsTo {
+        return $this->belongsTo(Report::class, 'report_id');
     }
 
     public function rows(): HasMany {

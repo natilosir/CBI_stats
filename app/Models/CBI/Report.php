@@ -1,13 +1,13 @@
 <?php
 
-namespace App\Models\Fund;
+namespace App\Models\CBI;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Fund extends Model {
-    protected $table = 'funds';
+class Report extends Model {
+    protected $table = 'cbi_reports';
 
     protected $fillable = [
         'hash',
@@ -19,25 +19,24 @@ class Fund extends Model {
         'period_end_date',
         'letter_serial',
         'error',
+        'name_hash',
+        'id',
+        'file_name',
     ];
 
     public function nameDictionary(): BelongsTo {
-        return $this->belongsTo(Dictionary::class, 'name_hash', 'hash_key');
+        return $this->belongsTo(Dictionary::class, 'name_hash', 'key');
     }
 
     public function sheets(): HasMany {
-        return $this->hasMany(Sheet::class, 'fund_id');
-    }
-
-    public function portfolios() {
-        return $this->hasMany(Portfolio::class);
+        return $this->hasMany(Sheet::class, 'report_id');
     }
 
     public function funds() {
-        return $this->hasMany(Fund::class);
+        return $this->hasMany(Report::class);
     }
 
     public function getNameAttribute() {
-        return $this->nameDictionary->original_value ?? 'Unknown';
+        return $this->nameDictionary->value ?? 'Unknown';
     }
 }

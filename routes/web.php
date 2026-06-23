@@ -1,14 +1,14 @@
 <?php
 
-use App\Core\Excel\ExcelController;
+use App\Http\Controllers\Excel\ExcelController;
 
-Route::prefix('excel')->name('excel.')->group(function () {
-    Route::get('/upload', [ExcelController::class, 'upload']);
-    Route::get('/sheets', [ExcelController::class, 'showSheets']);
-    Route::get('/json', [ExcelController::class, 'extractPortfolioId']);
-});
+Route::prefix('excel')
+    ->name('excel.')
+    ->group(function () {
+        Route::get('upload/{id}', [ ExcelController::class, 'upload' ]);
+        Route::get('sheets/{id}', [ ExcelController::class, 'showSheets' ]);
+        Route::get('json/{id}', [ ExcelController::class, 'extractPortfolioId' ]);
+    });
 
-
-Route::get('/test', function () {
-
-});
+Route::get('/', fn() => view('dashboard'))->name('dashboard');
+Route::get('/test', function () {});

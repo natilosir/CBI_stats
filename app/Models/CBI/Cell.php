@@ -1,13 +1,13 @@
 <?php
 
-namespace App\Models\Fund;
+namespace App\Models\CBI;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Cell extends Model {
     public    $timestamps = false;
-    protected $table      = 'fund_cells';
+    protected $table      = 'cbi_cells';
     protected $fillable   = [
         'row_id',
         'column_index',
@@ -17,13 +17,15 @@ class Cell extends Model {
         'col_span',
         'is_hidden',
         'styles',
+        'metadata',
+        'is_merged',
     ];
 
     protected $casts = [
-        'metadata'      => 'array',
-        'is_merged'     => 'boolean',
-        'styles'        => 'array',
-        'is_hidden'     => 'boolean',
+        'metadata'  => 'array',
+        'is_merged' => 'boolean',
+        'styles'    => 'array',
+        'is_hidden' => 'boolean',
     ];
 
     public function row(): BelongsTo {

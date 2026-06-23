@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Models\Fund;
+namespace App\Models\CBI;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Row extends Model {
     public    $timestamps = false;
-    protected $table      = 'fund_rows';
+    protected $table      = 'cbi_rows';
     protected $fillable   = [
         'sheet_id',
         'row_index',

@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Core\Excel;
+namespace App\Http\Controllers\Excel;
 
-use App\Models\Fund\{Cell, Dictionary, Row, Sheet};
+use App\Models\CBI\{Cell, Dictionary, Row, Sheet};
 use Illuminate\Support\Facades\{DB, Http, Storage};
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -13,30 +13,27 @@ class ExcelReaderService {
     private int    $currentFundId;
 
     private const MAX_ROWS    = 450;
-    private const MAX_COLUMNS = 55;
+    private const MAX_COLUMNS = 70;
 
-    public function processFromUrl( $id, $letter_serial ): array {
-        $this->letter_serial = $letter_serial;
-        $this->currentFundId = $id;
+    public function processFromUrl( $report ): array {
+        $this->currentFundId = $report->id;
 
-        $uri = 'https://codal.ir/Reports/DownloadFile.aspx';
-
-        $response = Http::withoutVerifying()->timeout(60)->get($uri, [ 'id' => $this->letter_serial ]);
-
-        if ( !$response->successful() ) {
-            throw new \Exception("Failed to download Excel file from URL: {$this->letter_serial}");
-        }
-
-        $safeFileName     = uniqid() . '.xlsx';
-        $relativeTempPath = 'temp/' . $safeFileName;
-
-        Storage::put($relativeTempPath, $response->body());
-        $absoluteTempPath = Storage::path($relativeTempPath);
+        //        $response = Http::withoutVerifying()->timeout(60)->get($uri, [ 'id' => $this->letter_serial ]);
+        //
+        //        if ( !$response->successful() ) {
+        //            throw new \Exception("Failed to download Excel file from URL: {$this->letter_serial}");
+        //        }
+        //
+        //        $safeFileName     = uniqid() . '.xlsx';
+        //        $relativeTempPath = 'temp/' . $safeFileName;
+        //
+        //        Storage::put($relativeTempPath, $response->body());
+        $absoluteTempPath = Storage::disk('cbi')->path($report->file_name);
 
         try {
             return $this->processFile($absoluteTempPath);
         } finally {
-            Storage::delete($relativeTempPath);
+//            Storage::delete($relativeTempPath);
         }
     }
 
@@ -51,7 +48,7 @@ class ExcelReaderService {
 
         $startIndex = 0;
 
-        $sheetsToProcess = array_slice($sheetNames, $startIndex, 7, true);
+        $sheetsToProcess = array_slice($sheetNames, $startIndex, 10, true);
         foreach ( $sheetsToProcess as $sheetIndex => $sheetName ) {
             $sheet     = $spreadsheet->getSheet($sheetIndex);
             $results[] = $this->processSheet($sheet, $sheetName, $sheetIndex);
@@ -73,7 +70,6 @@ class ExcelReaderService {
 
         try {
             $nameHash = $this->generateHash($sheetName);
-
             $dictionaryValues = [
                 $nameHash => $sheetName,
             ];
@@ -81,8 +77,8 @@ class ExcelReaderService {
             $this->syncDictionary($dictionaryValues);
 
             $sheetModel = Sheet::updateOrCreate([
-                'fund_id' => $this->currentFundId,
-                'index'   => $sheetIndex,
+                'report_id' => $this->currentFundId,
+                'index'     => $sheetIndex,
             ], [
                 'hash'          => $nameHash,
                 'total_rows'    => $sheet->getHighestRow(),
@@ -150,7 +146,8 @@ class ExcelReaderService {
                         continue;
                     }
 
-                    $cellObj = $sheet->getCellByColumnAndRow($colIdx, $rowIdx);
+                    $cellCoordinate = Coordinate::stringFromColumnIndex($colIdx) . $rowIdx;
+                    $cellObj = $sheet->getCell($cellCoordinate);
 
                     try {
                         if ( $cellObj->isFormula() ) {
@@ -295,7 +292,7 @@ class ExcelReaderService {
             return null;
         }
 
-        return substr(md5((string) $value), 0, 7);
+        return substr(md5((string) $value), 0, 11);
     }
 
     public function syncDictionary( array $stringValues ): void {
