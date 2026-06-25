@@ -18,8 +18,6 @@ return new class extends Migration
 
             $table->foreign('report_id')->references('id')->on('cbi_reports')->onDelete('cascade');
 
-            $table->foreign('hash')->references('key')->on('cbi_dictionary')->onDelete('restrict');
-
         });
     }
 
