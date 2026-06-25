@@ -1,9 +1,14 @@
 <?php
 
 use App\Http\Controllers\Excel\ExcelController;
+use App\Http\Controllers\FinancialChartController;
+use App\Models\Financial;
 use GuzzleHttp\Cookie\CookieJar;
 use GuzzleHttp\Cookie\SetCookie;
 use Illuminate\Support\Facades\Http;
+
+Route::get('/', fn() => view('dashboard'))
+    ->name('dashboard');
 
 Route::prefix('excel')
     ->name('excel.')
@@ -13,19 +18,14 @@ Route::prefix('excel')
         Route::get('json/{id}', [ ExcelController::class, 'extractId' ]);
     });
 
-Route::get('/', fn() => view('dashboard'))
-    ->name('dashboard');
+Route::get('chart', [ FinancialChartController::class, 'showChart' ]);
+Route::get('api/chart/data-by-id/{id}', [ FinancialChartController::class, 'getDataById' ]);
+Route::get('api/chart/data/{title}', [ FinancialChartController::class, 'getData' ]);
 
 Route::get('/test', function () {
-    $response = Http::withHeaders([
-        'User-Agent'                => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept'                    => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language'           => 'en-US,en;q=0.9,fa;q=0.8',
-        'Accept-Encoding'           => 'gzip, deflate, br',
-        'Connection'                => 'keep-alive',
-        'Upgrade-Insecure-Requests' => '1',
-    ])
-        ->get('https://cbi.ir/simplelist/35569.aspx');
-
-    return $response->body();
+    $roots = Financial::forReport(1)
+        ->roots()
+        ->searchTitle('نقدينگي')
+        ->get();
+    return ( $roots );
 });

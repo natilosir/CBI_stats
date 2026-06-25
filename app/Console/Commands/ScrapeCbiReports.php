@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\ProcessCbiReportsJob;
 use App\Models\CBI\Report;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
@@ -173,7 +174,7 @@ class ScrapeCbiReports extends Command {
                 $this->line("    ↳ Saved: {$savedFileName}");
 
                 // Upsert into cbi_reports
-                Report::updateOrCreate([ 'file_name' => $savedFileName ], [
+                $report = Report::updateOrCreate([ 'file_name' => $savedFileName ], [
                     'name'   => $excelNodeId ?? $fileBaseName,
                     'title'  => "بخش پولی و بانکی - {$yearLabel} - {$monthName}",
                     'period' => $monthName,
@@ -182,8 +183,9 @@ class ScrapeCbiReports extends Command {
 
                 $this->info("    ↳ ✓ Saved to DB.");
 
+                ProcessCbiReportsJob::dispatch($report->id);
                 // Brief pause to be polite to the server
-                sleep(5);                                     // 5 s
+                sleep(2);                                     // 5 s
             }
         }
 
@@ -334,14 +336,13 @@ class ScrapeCbiReports extends Command {
      * Find the Excel download link on the month's simplelist page.
      * Looks for a link next to icon_xls.gif  →  /page/{id}.aspx
      */
-    private function findExcelLink(string $html): ?string
-    {
+    private function findExcelLink( string $html ): ?string {
         // Find all <li> blocks (allow any attributes)
-        if (preg_match_all('/<li[^>]*>(.*?)<\/li>/si', $html, $liMatches)) {
-            foreach ($liMatches[1] as $li) {
-                if (stripos($li, 'icon_xls.gif') !== false) {
+        if ( preg_match_all('/<li[^>]*>(.*?)<\/li>/si', $html, $liMatches) ) {
+            foreach ( $liMatches[1] as $li ) {
+                if ( stripos($li, 'icon_xls.gif') !== false ) {
                     // Find anchor with href, allow both quotes
-                    if (preg_match('/<a\s+href=["\'](\/page\/\d+\.aspx)["\'][^>]*>/i', $li, $m)) {
+                    if ( preg_match('/<a\s+href=["\'](\/page\/\d+\.aspx)["\'][^>]*>/i', $li, $m) ) {
                         return $m[1];
                     }
                 }

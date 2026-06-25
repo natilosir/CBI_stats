@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Http\Controllers\Excel\ExcelReaderService;
+use App\Jobs\MigrateFinancialDataJob;
+use App\Jobs\ProcessCbiReportsJob;
 use App\Models\CBI\Report;
 use Illuminate\Console\Command;
 
@@ -65,6 +67,7 @@ class Extraction extends Command {
 
         $this->table($headers, $rows);
         $this->newLine();
+        MigrateFinancialDataJob::dispatch($id);
         return self::SUCCESS;
     }
 }

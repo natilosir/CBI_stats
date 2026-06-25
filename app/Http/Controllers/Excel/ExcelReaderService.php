@@ -28,12 +28,13 @@ class ExcelReaderService {
         //        $relativeTempPath = 'temp/' . $safeFileName;
         //
         //        Storage::put($relativeTempPath, $response->body());
-        $absoluteTempPath = Storage::disk('cbi')->path($report->file_name);
+        $absoluteTempPath = Storage::disk('cbi')
+            ->path($report->file_name);
 
         try {
             return $this->processFile($absoluteTempPath);
         } finally {
-//            Storage::delete($relativeTempPath);
+            //            Storage::delete($relativeTempPath);
         }
     }
 
@@ -69,7 +70,7 @@ class ExcelReaderService {
         DB::beginTransaction();
 
         try {
-            $nameHash = $this->generateHash($sheetName);
+            $nameHash         = $this->generateHash($sheetName);
             $dictionaryValues = [
                 $nameHash => $sheetName,
             ];
@@ -147,7 +148,7 @@ class ExcelReaderService {
                     }
 
                     $cellCoordinate = Coordinate::stringFromColumnIndex($colIdx) . $rowIdx;
-                    $cellObj = $sheet->getCell($cellCoordinate);
+                    $cellObj        = $sheet->getCell($cellCoordinate);
 
                     try {
                         if ( $cellObj->isFormula() ) {
@@ -307,9 +308,11 @@ class ExcelReaderService {
                 continue;
             }
 
+            $normalizedValue = $this->normalizePersianString($value);
+
             $rows[] = [
                 'key'   => $hash,
-                'value' => $value,
+                'value' => $normalizedValue,
             ];
         }
 
@@ -318,6 +321,65 @@ class ExcelReaderService {
         }
 
         Dictionary::upsert($rows, [ 'key' ], [ 'value' ]);
+    }
+
+    /**
+     * نرمالایزاسیون کامل و استانداردسازی رشته‌های فارسی
+     * - حذف نیم‌فاصله و کاراکترهای پهنای صفر
+     * - حذف اِعراب (حرکات)
+     * - تبدیل تمام حروف عربی غیراستاندارد به حروف فارسی
+     * - تبدیل اعداد عربی به فارسی
+     * - یکسان‌سازی فاصله‌ها
+     */
+    public function normalizePersianString( string $string ): string {
+        // 1. حذف نیم‌فاصله (ZWNJ)، فاصله‌ی پهنای صفر، پیونددهنده‌ی صفر و نشانه‌ی ترتیب بایت
+        $string = preg_replace('/[\x{200C}\x{200D}\x{200B}\x{FEFF}]/u', '', $string);
+
+        // 2. حذف کامل اِعراب (فتحه، کسره، ضمه، تشدید، مد و ...)
+        $string = preg_replace('/[\x{064B}-\x{065F}\x{0670}]/u', '', $string);
+
+        // 3. حذف کشیدگی (ـ)
+        $string = str_replace("\x{0640}", '', $string);
+
+        // 4. تبدیل حروف و اعداد عربی غیراستاندارد به فارسی
+        $map    = [
+            // انواع الف (عربی) به الف معمولی فارسی
+            "\x{0622}" => 'ا', // آ
+            "\x{0623}" => 'ا', // أ
+            "\x{0625}" => 'ا', // إ
+
+            // واو با همزه به واو معمولی
+            "\x{0624}" => 'و', // ؤ
+
+            // انواع «ی» و «ئ» و «ى» به «ی» فارسی
+            "\x{0626}" => 'ی', // ئ
+            "\x{0649}" => 'ی', // ى (الف مقصوره)
+            "\x{064A}" => 'ی', // ي (ی عربی)
+            "ي"        => 'ی', // ي (ی عربی)
+
+            // کاف عربی به کاف فارسی
+            "\x{0643}" => 'ک', // ك
+
+            // اعداد عربی (٠-٩) به اعداد فارسی (۰-۹)
+            "\x{0660}" => '۰',
+            "\x{0661}" => '۱',
+            "\x{0662}" => '۲',
+            "\x{0663}" => '۳',
+            "\x{0664}" => '۴',
+            "\x{0665}" => '۵',
+            "\x{0666}" => '۶',
+            "\x{0667}" => '۷',
+            "\x{0668}" => '۸',
+            "\x{0669}" => '۹',
+        ];
+        $string = strtr($string, $map);
+        $string = preg_replace('/[\x{00A0}\x{2000}-\x{200A}\x{202F}]/u', ' ', $string);
+
+        $string = preg_replace('/\s+/', ' ', $string);
+
+        $string = trim($string);
+
+        return $string;
     }
 
     /**
