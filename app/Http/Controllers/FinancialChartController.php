@@ -20,15 +20,16 @@ class FinancialChartController extends Controller {
      * دریافت داده‌ها برای اولین رکورد یا بر اساس ID
      */
     public function getDataById( $id ) {
-        $firstItem = Report::find($id);
+        $lastItem = Report::latest()
+            ->first();
 
-        if ( !$firstItem ) {
+        if ( !$lastItem ) {
             return response()->json([ 'error' => 'رکورد یافت نشد.' ], 404);
         }
 
         $sheetGrids = [];
 
-        Sheet::where('report_id', $id)
+        Sheet::where('report_id', $lastItem->id)
             ->orderBy('index')
             ->chunk(50, function ( $sheetChunk ) use ( &$sheetGrids ) {
                 $sheetChunk->load([
