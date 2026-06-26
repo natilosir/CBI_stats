@@ -16,7 +16,6 @@ trait SmartSheetParserTrait {
 
         $totalRows = (int) ( $sheet->total_rows ?? 0 );
         $totalCols = (int) ( $sheet->total_columns ?? 0 );
-
         foreach ( $grid as $r => $row ) {
             $totalRows = max($totalRows, $r);
             foreach ( $row as $c => $cell ) {
@@ -44,30 +43,56 @@ trait SmartSheetParserTrait {
         // 1. Detect current month & year
         $currentMonth = null;
         $currentYear  = 0;
+
+        // حالت اول: ماه و سال در یک سلول (مثل "اسفند 1400" یا "اسفند1400")
         for ( $r = 1; $r <= 10; $r ++ ) {
             if ( !isset($grid[$r]) ) continue;
             foreach ( $grid[$r] as $c => $cell ) {
                 $val = $this->cellValue($cell);
-                if ( preg_match('/^(\d{4})$/', $val, $m) ) {
-                    $year     = (int) $m[1];
-                    $monthVal = $this->cellValue($grid[$r - 1][$c] ?? null);
-                    if ( in_array($monthVal, $monthNames) ) {
-                        if ( $year > $currentYear || ( $year == $currentYear && array_search($monthVal, $monthNames) > array_search($currentMonth, $monthNames) ) ) {
-                            $currentYear  = $year;
-                            $currentMonth = $monthVal;
+                if ( preg_match('/(' . implode('|', $monthNames) . ')\s*(\d{4})/u', $val, $m) ) {
+                    $monthVal = $m[1];
+                    $year     = (int) $m[2];
+                    if ( $year > $currentYear || ( $year == $currentYear && array_search($monthVal, $monthNames) > array_search($currentMonth, $monthNames) ) ) {
+                        $currentYear  = $year;
+                        $currentMonth = $monthVal;
+                    }
+                }
+            }
+        }
+
+        // حالت دوم: سال در یک ردیف و ماه در ردیف بالای آن (الگوی قدیمی)
+        if ( !$currentMonth ) {
+            for ( $r = 1; $r <= 10; $r ++ ) {
+                if ( !isset($grid[$r]) ) continue;
+                foreach ( $grid[$r] as $c => $cell ) {
+                    $val = $this->cellValue($cell);
+                    if ( preg_match('/^(\d{4})$/', $val, $m) ) {
+                        $year     = (int) $m[1];
+                        $monthVal = $this->cellValue($grid[$r - 1][$c] ?? null);
+                        if ( in_array($monthVal, $monthNames) ) {
+                            if ( $year > $currentYear || ( $year == $currentYear && array_search($monthVal, $monthNames) > array_search($currentMonth, $monthNames) ) ) {
+                                $currentYear  = $year;
+                                $currentMonth = $monthVal;
+                            }
                         }
                     }
                 }
             }
         }
 
-        // ***** FIX: prevYear is always currentYear - 1 *****
-        $prevYear = $currentYear - 1;
-        // prevMonth is only used for share_mande_prev fallback (we now rely on 'اسفند')
+        // Fallback
+        if ( !$currentMonth || !$currentYear ) {
+            $year         = (int) substr($targetMonth, 0, 4);
+            $month        = substr($targetMonth, 4, 2);
+            $currentMonth = $monthMap[$month] ?? 'اسفند';
+            $currentYear  = $year;
+        }
+
+        $prevYear   = $currentYear - 1;
         $monthIndex = array_search($currentMonth, $monthNames);
         $prevMonth  = $monthIndex > 0 ? $monthNames[$monthIndex - 1] : 'اسفند';
 
-        // 2. Map parent categories (unchanged)
+        // 2. Map parent categories
         $parentCategory = [];
         for ( $r = 1; $r <= 10; $r ++ ) {
             if ( !isset($grid[$r]) ) continue;
@@ -103,67 +128,50 @@ trait SmartSheetParserTrait {
             foreach ( $grid[$r] as $c => $cell ) {
                 $val = $this->cellValue($cell);
                 $cat = $parentCategory[$c] ?? null;
-
                 if ( !$cat ) continue;
 
                 if ( $cat === 'mande' ) {
+                    // حالت قدیمی: ماه در همین ردیف و سال در ردیف زیر
                     if ( in_array($val, $monthNames) ) {
                         $yearBelow = $this->cellValue($grid[$r + 1][$c] ?? null);
                         if ( $val === $currentMonth && (int) $yearBelow === $currentYear ) {
                             $cols['mande_current'] = $c;
                         }
                     }
-                    // حالت دوم (ساختار جدید): ماه در ردیف زیر و سال در ردیف دوم زیر هدر
-                    else {
-                        $monthBelow = $this->cellValue($grid[$r + 1][$c] ?? null);
-                        $yearBelow  = $this->cellValue($grid[$r + 2][$c] ?? null);
-                        if ( in_array($monthBelow, $monthNames) && preg_match('/^\d{4}$/', $yearBelow) ) {
-                            if ( $monthBelow === $currentMonth && (int) $yearBelow === $currentYear ) {
-                                $cols['mande_current'] = $c;
-                            }
+                    // حالت جدید: سال مستقیماً در ردیف هدر نوشته شده (مثل 1400)
+                    elseif ( preg_match('/^(\d{4})$/', $val, $m) ) {
+                        if ( (int) $m[1] === $currentYear ) {
+                            $cols['mande_current'] = $c;
                         }
                     }
                 }
                 elseif ( $cat === 'growth' || $cat === 'share_growth' ) {
                     $prefix = $cat === 'growth' ? 'growth' : 'share_growth';
 
-                    // حالت اول: هدر با "به" شروع می‌شود (مثل "به خرداد 1403")
+                    // حالت قدیمی: هدر با "به" شروع می‌شود (مثل "به خرداد 1403")
                     if ( Str::startsWith($val, 'به') ) {
-                        // Year-over-year: "به" + currentMonth + prevYear
                         if ( Str::contains($val, $currentMonth) && Str::contains($val, (string) $prevYear) ) {
                             $cols[$prefix . '_yoy'] = $c;
                         }
-                        // End of previous year: "به اسفند" + prevYear
                         if ( Str::contains($val, 'اسفند') && Str::contains($val, (string) $prevYear) ) {
                             $cols[$prefix . '_end'] = $c;
                         }
                     }
-                    // حالت دوم (ساختار جدید اسفند/فروردین و...): ماه و سال در ردیف‌های زیرین هدر
-                    else {
-                        $monthBelow = $this->cellValue($grid[$r + 1][$c] ?? null);
-                        $yearBelow  = $this->cellValue($grid[$r + 2][$c] ?? null);
-
-                        if ( in_array($monthBelow, $monthNames) && preg_match('/^\d{4}$/', $yearBelow) ) {
-                            // شناسایی رشد سالانه (YoY)
-                            if ( $monthBelow === $currentMonth && (int) $yearBelow === $prevYear ) {
-                                $cols[$prefix . '_yoy'] = $c;
-                            }
-                            // شناسایی رشد پایان دوره (معمولاً اسفند سال قبل)
-                            if ( $monthBelow === 'اسفند' && (int) $yearBelow === $prevYear ) {
-                                if ( !$cols[$prefix . '_yoy'] ) {
-                                    $cols[$prefix . '_yoy'] = $c;
-                                }
-                                else {
-                                    $cols[$prefix . '_end'] = $c;
-                                }
-                            }
+                    // حالت جدید: سال مستقیماً در ردیف هدر نوشته شده (مثل 1399 و 1400)
+                    elseif ( preg_match('/^(\d{4})$/', $val, $m) ) {
+                        $year = (int) $m[1];
+                        if ( $year === $currentYear ) {
+                            $cols[$prefix . '_yoy'] = $c;
+                        }
+                        elseif ( $year === $prevYear ) {
+                            $cols[$prefix . '_end'] = $c; // سال قبل به عنوان پایان دوره قبلی در نظر گرفته می‌شود
                         }
                     }
                 }
             }
         }
 
-        // 4. Find share section (unchanged logic, but prevYear is now correct)
+        // 4. Find share section
         for ( $r = 1; $r <= $totalRows; $r ++ ) {
             if ( !isset($grid[$r]) ) continue;
             foreach ( $grid[$r] as $c => $cell ) {
@@ -174,12 +182,16 @@ trait SmartSheetParserTrait {
                         if ( !isset($grid[$sr]) ) continue;
                         foreach ( $grid[$sr] as $sc => $scell ) {
                             $sval = $this->cellValue($scell);
-                            // Current header: currentMonth + currentYear
-                            if ( Str::contains($sval, $currentMonth) && Str::contains($sval, (string) $currentYear) ) {
+
+                            // تشخیص هدر جاری (ترکیب ماه و سال یا فقط سال جاری)
+                            $isCurrent = ( Str::contains($sval, $currentMonth) && Str::contains($sval, (string) $currentYear) ) || ( preg_match('/^(\d{4})$/', $sval, $m) && (int) $m[1] === $currentYear );
+                            // تشخیص هدر قبلی (ترکیب اسفند و سال قبل یا فقط سال قبل)
+                            $isPrev = ( Str::contains($sval, 'اسفند') && Str::contains($sval, (string) $prevYear) ) || ( preg_match('/^(\d{4})$/', $sval, $m) && (int) $m[1] === $prevYear );
+
+                            if ( $isCurrent ) {
                                 $cols['share_mande_current'] = $sc;
                             }
-                            // هدر قبلی: اسفند یا ماه قبل + سال قبل
-                            if ( ( Str::contains($sval, 'اسفند') || Str::contains($sval, $prevMonth) ) && Str::contains($sval, (string) $prevYear) ) {
+                            if ( $isPrev ) {
                                 $cols['share_mande_prev'] = $sc;
                             }
                         }
@@ -216,7 +228,6 @@ trait SmartSheetParserTrait {
      */
     protected function buildTreeFromGrid( array $grid, array $cols = [] ): array {
         ksort($grid);
-
         $mandeCurrent      = $cols['mande_current'] ?? null;
         $growthYoy         = $cols['growth_yoy'] ?? null;
         $growthEnd         = $cols['growth_end'] ?? null;
@@ -250,7 +261,6 @@ trait SmartSheetParserTrait {
 
             $shareNode      = null;
             $inShareSection = false;
-
             for ( $r = $rowIdx; $r <= $endRow; $r ++ ) {
                 if ( !isset($grid[$r]) ) continue;
                 $rowData = $grid[$r];
@@ -260,7 +270,6 @@ trait SmartSheetParserTrait {
                 $bTitle = $this->cellValue($cellB);
 
                 $isShareSection = ( $shareSectionStart && $r >= $shareSectionStart );
-
                 if ( $isShareSection && !$inShareSection ) {
                     $inShareSection = true;
                     $shareNode      = [
@@ -315,6 +324,7 @@ trait SmartSheetParserTrait {
             }
             $tree[] = $node;
         }
+
         return $tree;
     }
 }
