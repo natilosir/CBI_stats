@@ -9,7 +9,7 @@ trait SmartSheetParserTrait {
     /**
      * پردازش شیت جدول پولی بانک مرکزی
      */
-    protected function parseMonetarySheet( Sheet $sheet, string $targetMonth ): ?array {
+    protected function parseMonetarySheet( Sheet $sheet ): ?array {
         $sheet->load([ 'rows.cells.dictionary', 'name' ]);
         $grid = $this->buildGrid($sheet);
         if ( empty($grid) ) return null;
@@ -61,14 +61,6 @@ trait SmartSheetParserTrait {
             }
         }
 
-        // Fallback
-        if ( !$currentMonth || !$currentYear ) {
-            $year         = (int) substr($targetMonth, 0, 4);
-            $month        = substr($targetMonth, 4, 2);
-            $currentMonth = $monthMap[$month] ?? 'خرداد';
-            $currentYear  = $year;
-        }
-
         // ***** FIX: prevYear is always currentYear - 1 *****
         $prevYear = $currentYear - 1;
         // prevMonth is only used for share_mande_prev fallback (we now rely on 'اسفند')
@@ -112,6 +104,8 @@ trait SmartSheetParserTrait {
                 $val = $this->cellValue($cell);
                 $cat = $parentCategory[$c] ?? null;
 
+                if ( !$cat ) continue;
+
                 if ( $cat === 'mande' ) {
                     if ( in_array($val, $monthNames) ) {
                         $yearBelow = $this->cellValue($grid[$r + 1][$c] ?? null);
@@ -119,19 +113,50 @@ trait SmartSheetParserTrait {
                             $cols['mande_current'] = $c;
                         }
                     }
+                    // حالت دوم (ساختار جدید): ماه در ردیف زیر و سال در ردیف دوم زیر هدر
+                    else {
+                        $monthBelow = $this->cellValue($grid[$r + 1][$c] ?? null);
+                        $yearBelow  = $this->cellValue($grid[$r + 2][$c] ?? null);
+                        if ( in_array($monthBelow, $monthNames) && preg_match('/^\d{4}$/', $yearBelow) ) {
+                            if ( $monthBelow === $currentMonth && (int) $yearBelow === $currentYear ) {
+                                $cols['mande_current'] = $c;
+                            }
+                        }
+                    }
                 }
                 elseif ( $cat === 'growth' || $cat === 'share_growth' ) {
-                    // ***** FIX: growth_end = "به اسفند" + prevYear, growth_yoy = "به" + currentMonth + prevYear *****
+                    $prefix = $cat === 'growth' ? 'growth' : 'share_growth';
+
+                    // حالت اول: هدر با "به" شروع می‌شود (مثل "به خرداد 1403")
                     if ( Str::startsWith($val, 'به') ) {
                         // Year-over-year: "به" + currentMonth + prevYear
                         if ( Str::contains($val, $currentMonth) && Str::contains($val, (string) $prevYear) ) {
-                            if ( $cat === 'growth' ) $cols['growth_yoy'] = $c;
-                            else $cols['share_growth_yoy'] = $c;
+                            $cols[$prefix . '_yoy'] = $c;
                         }
                         // End of previous year: "به اسفند" + prevYear
                         if ( Str::contains($val, 'اسفند') && Str::contains($val, (string) $prevYear) ) {
-                            if ( $cat === 'growth' ) $cols['growth_end'] = $c;
-                            else $cols['share_growth_end'] = $c;
+                            $cols[$prefix . '_end'] = $c;
+                        }
+                    }
+                    // حالت دوم (ساختار جدید اسفند/فروردین و...): ماه و سال در ردیف‌های زیرین هدر
+                    else {
+                        $monthBelow = $this->cellValue($grid[$r + 1][$c] ?? null);
+                        $yearBelow  = $this->cellValue($grid[$r + 2][$c] ?? null);
+
+                        if ( in_array($monthBelow, $monthNames) && preg_match('/^\d{4}$/', $yearBelow) ) {
+                            // شناسایی رشد سالانه (YoY)
+                            if ( $monthBelow === $currentMonth && (int) $yearBelow === $prevYear ) {
+                                $cols[$prefix . '_yoy'] = $c;
+                            }
+                            // شناسایی رشد پایان دوره (معمولاً اسفند سال قبل)
+                            if ( $monthBelow === 'اسفند' && (int) $yearBelow === $prevYear ) {
+                                if ( !$cols[$prefix . '_yoy'] ) {
+                                    $cols[$prefix . '_yoy'] = $c;
+                                }
+                                else {
+                                    $cols[$prefix . '_end'] = $c;
+                                }
+                            }
                         }
                     }
                 }
@@ -153,8 +178,8 @@ trait SmartSheetParserTrait {
                             if ( Str::contains($sval, $currentMonth) && Str::contains($sval, (string) $currentYear) ) {
                                 $cols['share_mande_current'] = $sc;
                             }
-                            // Previous header: always "اسفند" + prevYear
-                            if ( Str::contains($sval, 'اسفند') && Str::contains($sval, (string) $prevYear) ) {
+                            // هدر قبلی: اسفند یا ماه قبل + سال قبل
+                            if ( ( Str::contains($sval, 'اسفند') || Str::contains($sval, $prevMonth) ) && Str::contains($sval, (string) $prevYear) ) {
                                 $cols['share_mande_prev'] = $sc;
                             }
                         }

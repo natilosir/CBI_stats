@@ -131,7 +131,8 @@ class ScrapeCbiReports extends Command {
                 $this->line("  Month: {$monthName} ({$monthNumber}) → {$fileBaseName}");
 
                 // Skip if already downloaded (unless --fresh)
-                if ( $this->alreadyExists($fileBaseName) ) {
+                if ( $report = $this->alreadyExists($fileBaseName) ) {
+                    ProcessCbiReportsJob::dispatch($report->id);
                     $this->line("    ↳ Already in DB. Skipping.");
                     continue;
                 }
@@ -181,11 +182,10 @@ class ScrapeCbiReports extends Command {
                     'error'  => null,
                 ]);
 
-                $this->info("    ↳ ✓ Saved to DB.");
+                $this->info("        ↳ ✓ Saved to DB.");
 
                 ProcessCbiReportsJob::dispatch($report->id);
-                // Brief pause to be polite to the server
-                sleep(2);                                     // 5 s
+//                sleep(1);
             }
         }
 
@@ -399,9 +399,9 @@ class ScrapeCbiReports extends Command {
     // DB helpers
     // ──────────────────────────────────────────────────────────────────────────
 
-    private function alreadyExists( string $fileBaseName ): bool {
+    private function alreadyExists( string $fileBaseName ): ?Report {
         return Report::where('file_name', 'like', $fileBaseName . '.%')
-            ->exists();
+            ->first();
     }
 
     private function saveError( string $year, string $monthName, string $fileBaseName, string $error ): void {

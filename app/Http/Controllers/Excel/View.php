@@ -4,14 +4,12 @@ namespace App\Http\Controllers\Excel;
 
 use App\Models\CBI\Report;
 use App\Models\CBI\Sheet;
-use Illuminate\Support\Collection;
 
 trait View {
     use SmartSheetParserTrait;
 
     public function extractId( $id ) {
-        $targetMonth = request('month', '140403');
-        $report      = Report::where('id', $id)
+        $report = Report::where('id', $id)
             ->firstOrFail();
 
         $sheet = Sheet::where('report_id', $report->id)
@@ -22,13 +20,15 @@ trait View {
             return response()->json([]);
         }
 
-        $parsed = $this->parseMonetarySheet($sheet, $targetMonth);
+        $parsed = $this->parseMonetarySheet($sheet);
         if ( !$parsed ) {
             return response()->json([]);
         }
 
         $result = $this->buildTreeFromGrid($parsed['grid'], $parsed['cols'] ?? []);
         $result = $this->filterEmptyChildren($result);
+
+                $result[] = $parsed['grid'];
 
         return response()->json($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     }
