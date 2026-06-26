@@ -22,10 +22,4 @@ Route::get('chart', [ FinancialChartController::class, 'showChart' ]);
 Route::get('api/chart/data-by-id/{id}', [ FinancialChartController::class, 'getDataById' ]);
 Route::get('api/chart/data/{title}', [ FinancialChartController::class, 'getData' ]);
 
-Route::get('/test', function () {
-    $roots = Financial::forReport(1)
-        ->roots()
-        ->searchTitle('نقدينگي')
-        ->get();
-    return ( $roots );
-});
+Route::get('/test', function () {});
