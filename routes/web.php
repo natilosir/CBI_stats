@@ -7,8 +7,6 @@ use GuzzleHttp\Cookie\CookieJar;
 use GuzzleHttp\Cookie\SetCookie;
 use Illuminate\Support\Facades\Http;
 
-Route::get('/', fn() => view('dashboard'))
-    ->name('dashboard');
 
 Route::prefix('excel')
     ->name('excel.')
@@ -18,7 +16,7 @@ Route::prefix('excel')
         Route::get('json/{id}', [ ExcelController::class, 'extractId' ]);
     });
 
-Route::get('chart', [ FinancialChartController::class, 'showChart' ]);
+Route::get('', [ FinancialChartController::class, 'showChart' ]);
 Route::get('api/chart/data-by-id/{id}', [ FinancialChartController::class, 'getDataById' ]);
 Route::get('api/chart/data/{title}', [ FinancialChartController::class, 'getData' ]);
 
