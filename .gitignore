@@ -25,4 +25,3 @@ Homestead.yaml
 Thumbs.db
 *.sql
 /public/storage
-/public/build/
